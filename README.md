@@ -55,7 +55,7 @@ These additional behavior settings are available by editing the Lua file; they c
 - `INCLUDE_JUMPING_AND_FALLING` — set to `true` to count jumping or falling as movement. Default: `false`.
 - `DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT` — set to `true` to block automatic weapon transitions after using a ranged weapon in combat until combat ends and the post-Shoot handoff window passes. Default: `false`. This setting is ignored when Combat is disabled.
 
-The unsheathing and action delays can also be edited in the Lua file. Defaults are `UnsheatheDelay = 0.5` seconds and `ActionDelay = 3.0` seconds.
+The unsheathing and action delays can also be edited in the Lua file. Defaults are `UnsheatheDelay = 0.5` seconds and `ActionDelay = 0.5` seconds.
 
 ## Compatibility
 
