@@ -1,6 +1,6 @@
 # Unsheathed
 
-**Unsheathed** automatically draws and sheathes your weapons to help prevent weapon clipping during normal movement.
+**Unsheathed** is an addon designed specifically for World of Warcraft: Forever that automatically draws and sheathes your weapons to help prevent weapon clipping during normal movement.
 
 The addon responds to movement, combat, and attackable targets according to your settings. It can also redraw your weapon when an action sheaths it while the conditions for drawing are still met. Unsheathed avoids drawing during active casts and channels.
 
