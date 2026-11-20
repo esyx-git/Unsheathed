@@ -20,7 +20,7 @@ The addon responds to movement, combat, and attackable targets according to your
 
 Install Unsheathed using the CurseForge app, or visit the project page:
 
-**CurseForge:** [Project page](<CURSEFORGE_PROJECT_URL>)
+**CurseForge:** [Project page](<https://www.curseforge.com/wow/addons/unsheathed>)
 
 ### Manual installation
 
