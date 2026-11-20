@@ -1376,7 +1376,7 @@ local function printStatus()
         .. (enabled and "|cff80ff80Enabled|r"
             or "|cffff8080Disabled|r"))
     printOptionStatus()
-    printLine("|cff80c0ffSheathe Delay:|r "
+    printLine("|cff80c0ffDelay:|r "
         .. formatSheatheDelay(SheatheDelay)
         .. " Seconds")
     printLine("|cffffd200Commands:|r Type |cffffd200/us help|r for options and commands.")
