@@ -20,7 +20,7 @@ Movement always triggers unsheathing. You can also choose whether combat and att
 
 ### CurseForge
 
-Install Unsheathed using the CurseForge app, or visit the [Project Page](https://www.curseforge.com/wow/addons/unsheathed) directly.
+Install Unsheathed using the CurseForge app, or visit the [Curseforge Project](https://www.curseforge.com/wow/addons/unsheathed) directly.
 
 ### Manual installation
 
