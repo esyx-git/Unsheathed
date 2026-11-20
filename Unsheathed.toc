@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: Unsheathed
-## Version: v1.1.2
+## Version: v1.1.3
 ## Notes: Automatically draws and sheathes weapons based on movement, targets, and combat. Use /us for help.
 ## SavedVariablesPerCharacter: UnsheathedDB
 ## IconTexture: Interface\AddOns\Unsheathed\icon.tga
