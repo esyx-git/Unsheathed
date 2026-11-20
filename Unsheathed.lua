@@ -30,6 +30,7 @@ local ACTION_RECHECK_COUNT = 3
 
 local EATING_DRINKING_AURA_IDS = {
     [430] = true,
+    [431] = true,
     [432] = true,
     [2639] = true,
     [24005] = true,
@@ -175,6 +176,19 @@ local function hasAttackableTarget()
     return safeBool(UnitCanAttack, "player", "target")
 end
 
+local function getSheathState()
+    if type(GetSheathState) ~= "function" then
+        return nil
+    end
+
+    local ok, state = pcall(GetSheathState)
+    if not ok or isSecret(state) or type(state) ~= "number" then
+        return nil
+    end
+
+    return state
+end
+
 local function isPlayerSitting()
     if type(UnitIsSitting) == "function" then
         local ok, value = pcall(UnitIsSitting, "player")
@@ -195,10 +209,17 @@ local function isPlayerSitting()
     return nil
 end
 
-local function hasEatingOrDrinkingAura()
-    if type(UnitAura) ~= "function" then
+local function isEatingOrDrinkingAura(auraName, spellID)
+    if type(spellID) == "number"
+        and EATING_DRINKING_AURA_IDS[spellID] then
+        return true
+    end
+
+    if isSecret(auraName) or type(auraName) ~= "string" then
         return false
     end
+
+    local normalizedName = string.lower(auraName)
 
     local foodName = type(FOOD) == "string"
         and string.lower(FOOD)
@@ -208,30 +229,81 @@ local function hasEatingOrDrinkingAura()
         and string.lower(DRINK)
         or "drink"
 
-    for index = 1, 40 do
-        local ok, auraName, _, _, _, _, _, _, _, _, spellID =
-            pcall(UnitAura, "player", index, "HELPFUL")
+    return normalizedName == foodName
+        or normalizedName == drinkName
+        or normalizedName == "food"
+        or normalizedName == "drink"
+end
 
-        if not ok or auraName == nil then
-            break
-        end
+local function pack(...)
+    return { n = select("#", ...), ... }
+end
 
-        if not isSecret(auraName) then
-            if type(spellID) == "number"
-                and EATING_DRINKING_AURA_IDS[spellID] then
-                return true
+local function hasEatingOrDrinkingAura()
+    -- Prefer the aura-data API when available. It exposes the aura name and
+    -- spell ID directly, avoiding differences in UnitAura return positions.
+    local auraAPI = type(C_UnitAuras) == "table"
+        and C_UnitAuras.GetAuraDataByIndex
+
+    if type(auraAPI) == "function" then
+        local auraAPIUsable = true
+
+        for index = 1, 40 do
+            local ok, auraData =
+                pcall(auraAPI, "player", index, "HELPFUL")
+
+            if not ok then
+                auraAPIUsable = false
+                break
             end
 
-            if type(auraName) == "string" then
-                local normalizedName = string.lower(auraName)
+            if auraData == nil then
+                break
+            end
 
-                if normalizedName == foodName
-                    or normalizedName == drinkName
-                    or normalizedName == "food"
-                    or normalizedName == "drink" then
+            if not isSecret(auraData) and type(auraData) == "table" then
+                if isEatingOrDrinkingAura(
+                    auraData.name,
+                    auraData.spellId or auraData.spellID
+                ) then
                     return true
                 end
             end
+        end
+
+        if auraAPIUsable then
+            return false
+        end
+    end
+
+    if type(UnitAura) ~= "function" then
+        return false
+    end
+
+    for index = 1, 40 do
+        local values = pack(
+            pcall(UnitAura, "player", index, "HELPFUL")
+        )
+
+        if values[1] ~= true then
+            break
+        end
+
+        local auraName = values[2]
+        if auraName == nil then
+            break
+        end
+
+        -- UnitAura's spell ID is at return position 10 on some clients and
+        -- position 11 on others. The pcall success value is values[1], so
+        -- those positions are values[11] and values[12] here.
+        local spellID = values[11]
+        if type(spellID) ~= "number" then
+            spellID = values[12]
+        end
+
+        if isEatingOrDrinkingAura(auraName, spellID) then
+            return true
         end
     end
 
@@ -239,28 +311,23 @@ local function hasEatingOrDrinkingAura()
 end
 
 local function isEatingOrDrinkingWhileSitting()
-    if not hasEatingOrDrinkingAura() then
-        return false
-    end
-
     local sitting = isPlayerSitting()
 
-    -- If the client does not expose a sitting query, rely on the active
-    -- Food/Drink aura rather than failing to recognize the meal.
-    return sitting == nil or sitting
-end
-
-local function getSheathState()
-    if type(GetSheathState) ~= "function" then
-        return nil
+    if sitting ~= true then
+        -- If the sitting query is unavailable, the active aura can still
+        -- identify a meal. A known false sitting state is not treated as one.
+        return sitting == nil and hasEatingOrDrinkingAura()
     end
 
-    local ok, state = pcall(GetSheathState)
-    if not ok or isSecret(state) or type(state) ~= "number" then
-        return nil
+    if hasEatingOrDrinkingAura() then
+        return true
     end
 
-    return state
+    -- Some food and drink effects do not expose a recognizable aura name
+    -- or spell ID. In persistent-draw mode, a seated player whose weapon
+    -- has been sheathed is treated as eating/drinking until the next state
+    -- change, rather than repeatedly trying to draw the weapon.
+    return not SHEATHE and getSheathState() == 1
 end
 
 local function getInventorySlotID(slotName, fallback)
