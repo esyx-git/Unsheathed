@@ -22,7 +22,7 @@ Movement always triggers unsheathing. You can also choose whether combat and att
 
 Install Unsheathed using the CurseForge app, or visit the [Project Page](https://www.curseforge.com/wow/addons/unsheathed) directly.
 
-### Manual installation
+### Manual Installation
 
 1. Download and extract the addon ZIP.
 2. Place the `Unsheathed` folder in your WoW AddOns directory. The `.toc` and Lua files should be directly inside that folder, not inside another nested `Unsheathed` folder.
