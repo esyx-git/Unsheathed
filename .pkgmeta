@@ -1,0 +1,4 @@
+package-as: Unsheathed
+license-output: LICENSE
+ignore:
+  - README.md
