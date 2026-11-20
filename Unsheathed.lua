@@ -582,6 +582,21 @@ local function driveTowardState(goalState, shootActive)
 
     local afterState = getSheathState()
 
+    -- From melee, the client cycles to ranged before sheathed. When both
+    -- weapons are equipped, toggle a second time immediately to sheath.
+    if goalState == 1
+        and beforeState == 2
+        and mainHandPresent
+        and rangedPresent then
+        local secondOk = pcall(ToggleSheath)
+        if not secondOk then
+            scheduleToggleCheck(goalState, TOGGLE_UNCHANGED_RETRY_DELAY)
+            return
+        end
+
+        afterState = getSheathState()
+    end
+
     if afterState == goalState then
         cancelToggleTimer()
         pendingToggleGoal = nil
