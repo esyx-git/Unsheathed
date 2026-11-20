@@ -65,8 +65,4 @@ Unsheathed targets the WoW: Forever client with interface version **16001**. The
 
 Unsheathed is licensed under **GNU General Public License v3.0 only (GPL-3.0-only)**. See the `LICENSE` file for the complete license text.
 
-Replace the following example with your copyright details in the `LICENSE` file:
-
 `Copyright (C) [2026] [Esyx]`
-
-Make sure you have the right to license all files in the repository. Any third-party code or assets may be subject to separate license terms.
