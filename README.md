@@ -42,7 +42,7 @@ Use `/us` or `/us status` to view the addon’s status and settings. Use `/us he
 | `/us delay <1–60>` | Set the sheathing delay in seconds. Decimals are accepted, for example `/us delay 2.5`. |
 | `/us help` | Show available commands. |
 
-### Ranged weapon note
+### Disclaimer (Ranged)
 
 The WoW client can’t sheath or unsheathe a ranged weapon directly. Switching to the ranged weapon requires the client to cycle through the main-hand weapon first. When Ranged is on, combat weapon changes are left to the client.
 
