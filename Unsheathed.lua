@@ -28,6 +28,13 @@ local ACTION_RECHECK_FIRST_DELAY = 0.10
 local ACTION_RECHECK_REPEAT_DELAY = 0.25
 local ACTION_RECHECK_COUNT = 3
 
+local EATING_DRINKING_AURA_IDS = {
+    [430] = true,
+    [432] = true,
+    [2639] = true,
+    [24005] = true,
+}
+
 UnsheathedDB = UnsheathedDB or {}
 
 local _issecretvalue = issecretvalue or function()
@@ -166,6 +173,81 @@ local function hasAttackableTarget()
     end
 
     return safeBool(UnitCanAttack, "player", "target")
+end
+
+local function isPlayerSitting()
+    if type(UnitIsSitting) == "function" then
+        local ok, value = pcall(UnitIsSitting, "player")
+
+        if ok and not isSecret(value) then
+            return value == true or value == 1
+        end
+    end
+
+    if type(IsSitting) == "function" then
+        local ok, value = pcall(IsSitting)
+
+        if ok and not isSecret(value) then
+            return value == true or value == 1
+        end
+    end
+
+    return nil
+end
+
+local function hasEatingOrDrinkingAura()
+    if type(UnitAura) ~= "function" then
+        return false
+    end
+
+    local foodName = type(FOOD) == "string"
+        and string.lower(FOOD)
+        or "food"
+
+    local drinkName = type(DRINK) == "string"
+        and string.lower(DRINK)
+        or "drink"
+
+    for index = 1, 40 do
+        local ok, auraName, _, _, _, _, _, _, _, _, spellID =
+            pcall(UnitAura, "player", index, "HELPFUL")
+
+        if not ok or auraName == nil then
+            break
+        end
+
+        if not isSecret(auraName) then
+            if type(spellID) == "number"
+                and EATING_DRINKING_AURA_IDS[spellID] then
+                return true
+            end
+
+            if type(auraName) == "string" then
+                local normalizedName = string.lower(auraName)
+
+                if normalizedName == foodName
+                    or normalizedName == drinkName
+                    or normalizedName == "food"
+                    or normalizedName == "drink" then
+                    return true
+                end
+            end
+        end
+    end
+
+    return false
+end
+
+local function isEatingOrDrinkingWhileSitting()
+    if not hasEatingOrDrinkingAura() then
+        return false
+    end
+
+    local sitting = isPlayerSitting()
+
+    -- If the client does not expose a sitting query, rely on the active
+    -- Food/Drink aura rather than failing to recognize the meal.
+    return sitting == nil or sitting
 end
 
 local function getSheathState()
@@ -394,7 +476,7 @@ local function scheduleActionRecheckPass(generation, pass, delay)
 end
 
 local function scheduleActionRechecks()
-    if not enabled then
+    if not enabled or isEatingOrDrinkingWhileSitting() then
         return
     end
 
@@ -653,6 +735,7 @@ local function scheduleUnsheatheTimer(delay, kind)
         unsheatheTimerKind = nil
 
         if enabled
+            and not isEatingOrDrinkingWhileSitting()
             and not postShootActionPause
             and not combatAutomationPaused()
             and shouldUnsheatheNow()
@@ -665,6 +748,7 @@ end
 
 local function requestUnsheathe(shootActive)
     if not enabled
+        or isEatingOrDrinkingWhileSitting()
         or postShootActionPause
         or combatAutomationPaused()
         or not shouldUnsheatheNow() then
@@ -725,6 +809,7 @@ local function scheduleSheathe()
 
         if enabled
             and SHEATHE
+            and not isEatingOrDrinkingWhileSitting()
             and not postShootActionPause
             and not combatAutomationPaused()
             and not shouldUnsheatheNow() then
@@ -761,7 +846,9 @@ local function isOwnChatMessage(author, senderGUID)
 end
 
 local function shouldKeepPolling()
-    if not enabled or combatAutomationPaused() then
+    if not enabled
+        or isEatingOrDrinkingWhileSitting()
+        or combatAutomationPaused() then
         return false
     end
 
@@ -814,6 +901,18 @@ end
 
 local function updateStateCore()
     if not enabled then
+        return
+    end
+
+    if isEatingOrDrinkingWhileSitting() then
+        cancelSheatheTimer()
+        cancelUnsheatheTimer()
+        cancelActionRecheckTimer()
+
+        pendingToggle = nil
+        idleSheathing = false
+        unsheatheReady = false
+
         return
     end
 
@@ -988,6 +1087,7 @@ local function registerEvents()
     frame:RegisterEvent("PLAYER_ENTERING_WORLD")
     frame:RegisterEvent("CHAT_MSG_SAY")
     frame:RegisterEvent("CHAT_MSG_YELL")
+    frame:RegisterEvent("UNIT_AURA")
 
     frame:RegisterEvent("UNIT_FLAGS")
     frame:RegisterEvent("UNIT_FACTION")
@@ -1262,6 +1362,14 @@ frame:SetScript("OnEvent", function(_, event, ...)
         return
     end
 
+    if event == "UNIT_AURA" then
+        local unit = ...
+        if unit == "player" then
+            updateState()
+        end
+        return
+    end
+
     if event == "UNIT_FLAGS" or event == "UNIT_FACTION" then
         local unit = ...
         if unit == "target" then
@@ -1296,7 +1404,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
         end
 
         updateState()
-        scheduleActionRechecks()
+
+        if not isEatingOrDrinkingWhileSitting() then
+            scheduleActionRechecks()
+        end
+
         return
     end
 
