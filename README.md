@@ -4,7 +4,7 @@
 
 Movement always triggers unsheathing. You can also choose whether combat and attackable targets trigger it. When draw conditions end, Unsheathed sheathes your weapon after your chosen delay, if automatic sheathing is enabled. The addon avoids drawing during active casts and channels, and can redraw your weapon if an action sheathes it while a draw condition is still active.
 
-**Current version:** 1.1.1
+**Current version:** 1.1.3
 
 ## Features
 
