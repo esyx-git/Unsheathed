@@ -1,27 +1,26 @@
 # Unsheathed
 
-**Unsheathed** is an addon designed specifically for World of Warcraft: Forever that automatically draws and sheathes your weapons to help prevent weapon clipping during normal movement.
+**Unsheathed** is an addon for World of Warcraft: Forever that automatically draws and sheathes your weapons based on movement, combat, and attackable targets. It can help reduce weapon clipping and keep weapons drawn when you want them visible.
 
-The addon responds to movement, combat, and attackable targets according to your settings. It can also redraw your weapon when an action sheathes it while the conditions for drawing are still met. Unsheathed avoids drawing during active casts and channels.
+Movement always triggers unsheathing. You can also choose whether combat and attackable targets trigger it. When draw conditions end, Unsheathed sheathes your weapon after your chosen delay, if automatic sheathing is enabled. The addon avoids drawing during active casts and channels, and can redraw your weapon if an action sheathes it while a draw condition is still active.
+
+**Current version:** 1.1.1
 
 ## Features
 
 - Automatically unsheathes when you move.
-- Optionally unsheathes during combat or while targeting a living, attackable entity.
-- Sheathes after a configurable delay when movement and attackable targeting stop.
-- Lets you turn automatic sheathing on or off. When it’s off, the selected weapon stays drawn unless you’re casting or shooting.
-- Optionally prefers the ranged weapon instead of the main-hand weapon.
-- Handles the client’s weapon-state cycling between sheathed, melee, and ranged.
+- Optionally unsheathes during combat or while targeting an attackable enemy.
+- Sheathes after a configurable delay when draw conditions end.
+- Lets you enable or disable automatic sheathing.
+- Lets you use your main-hand or ranged weapon.
+- Avoids interfering with active Shoot or auto-repeat ranged fire.
 - Saves the enabled state and supported settings separately for each character.
-- Provides chat commands to check status and change settings.
 
 ## Installation
 
 ### CurseForge
 
-Install Unsheathed using the CurseForge app, or visit the project page:
-
-**CurseForge:** [Project page](<https://www.curseforge.com/wow/addons/unsheathed>)
+Install Unsheathed using the CurseForge app, or visit the [CurseForge project page](https://www.curseforge.com/wow/addons/unsheathed).
 
 ### Manual installation
 
@@ -31,29 +30,35 @@ Install Unsheathed using the CurseForge app, or visit the project page:
 
 ## Commands
 
-Use `/us` or `/us status` to view the addon’s status and settings. Use `/us help` to display the available commands.
+Use `/us` or `/us status` to view the addon’s status and settings. Use `/us help` to display available commands.
 
 | Command | Description |
 | --- | --- |
-| `/us on \| off` | Enable or disable Unsheathed for the current character. |
-| `/us sheathe on \| off` | Enable or disable automatic sheathing. |
-| `/us combat on \| off` | Allow or pause automatic weapon behavior during combat. |
-| `/us target on \| off` | Enable or disable target-triggered unsheathing. |
-| `/us ranged on \| off` | Prefer the ranged weapon or the main-hand weapon when drawing. |
-| `/us delay <1–60>` | Set the sheathing delay in seconds. Decimal values are accepted, for example `/us delay 2.5`. |
+| `/us <on\|off>` | Enable or disable Unsheathed for the current character. |
+| `/us sheathe <on\|off>` | Enable or disable automatic sheathing. |
+| `/us combat <on\|off>` | Include or ignore combat. When combat is ignored, automatic weapon changes pause until combat ends. |
+| `/us target <on\|off>` | Enable or disable target-triggered unsheathing. |
+| `/us ranged <on\|off>` | Choose the ranged or main-hand weapon. Ranged mode requires a supported class and an equipped ranged weapon. |
+| `/us delay <1–60>` | Set the sheathing delay in seconds. Decimals are accepted, for example `/us delay 2.5`. |
+| `/us help` | Show available commands. |
 
-When Ranged is on, combat weapon changes are left to the client. Dead or ghost targets do not count as attackable targets.
+### Ranged weapon note
+
+The WoW client can’t sheath or unsheathe a ranged weapon directly. Switching to the ranged weapon requires the client to cycle through the main-hand weapon first. When Ranged is on, combat weapon changes are left to the client.
 
 ## Settings
 
-The default sheathing delay is **3 seconds**. Change it for the current character with `/us delay`.
+The default sheathing delay is **3.0 seconds**. Change it for the current character with `/us delay`; the value is saved per character.
 
-These additional behavior settings are available by editing the Lua file; they cannot be changed through chat commands:
+These additional behavior settings can only be changed by editing `Unsheathed.lua`:
 
-- `INCLUDE_JUMPING_AND_FALLING` — set to `true` to count jumping or falling as movement. Default: `false`.
-- `DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT` — set to `true` to block automatic weapon transitions after using a ranged weapon in combat until combat ends and the post-Shoot handoff window passes. Default: `false`. This setting is ignored when Combat is off.
+- `INCLUDE_JUMPING_AND_FALLING` — Set to `true` to count jumping or falling as movement. Default: `false`.
+- `DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT` — Set to `true` to block automatic weapon transitions after ranged fire in combat until combat ends and the post-Shoot handoff window passes. Default: `false`. This setting is ignored when combat behavior is disabled.
 
-The unsheathing and action delays can also be edited in the Lua file. Defaults are `UnsheatheDelay = 0.5` seconds and `ActionDelay = 0.5` seconds.
+The unsheathing and action delays can also be edited in `Unsheathed.lua`:
+
+- `UnsheatheDelay = 0.5` seconds — Delay before drawing a weapon.
+- `ActionDelay = 3.0` seconds — Delay after an action, such as speaking, causes the weapon to sheath.
 
 ## Compatibility
 
@@ -62,5 +67,3 @@ Unsheathed targets the WoW: Forever client with interface version **16001**. The
 ## License
 
 Unsheathed is licensed under **GNU General Public License v3.0 only (GPL-3.0-only)**. See the `LICENSE` file for the complete license text.
-
-`Copyright (C) [2026] [Esyx]`
