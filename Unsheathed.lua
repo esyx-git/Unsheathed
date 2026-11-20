@@ -4,6 +4,7 @@ local DEFAULT_USE_RANGED_WEAPON = false
 local DEFAULT_INCLUDE_COMBAT = true
 local DEFAULT_INCLUDE_ATTACKABLE_TARGETS = true
 local DEFAULT_ENABLED = true
+local DEFAULT_SHEATHE = true
 local DEFAULT_SHEATHE_DELAY = 3.0
 
 local INCLUDE_JUMPING_AND_FALLING = false
@@ -43,6 +44,7 @@ local USE_RANGED_WEAPON = DEFAULT_USE_RANGED_WEAPON
 local INCLUDE_COMBAT = DEFAULT_INCLUDE_COMBAT
 local INCLUDE_ATTACKABLE_TARGETS =
     DEFAULT_INCLUDE_ATTACKABLE_TARGETS
+local SHEATHE = DEFAULT_SHEATHE
 
 local eventMoving = false
 local moving = false
@@ -311,6 +313,12 @@ end
 local function shouldUnsheatheNow()
     if isInCombatNow() then
         return INCLUDE_COMBAT and not USE_RANGED_WEAPON
+    end
+
+    -- With automatic sheathing disabled, keep the selected weapon drawn
+    -- even when the player is idle or has no attackable target.
+    if not SHEATHE then
+        return true
     end
 
     return moving
@@ -716,6 +724,7 @@ local function scheduleSheathe()
         sheatheTimer = nil
 
         if enabled
+            and SHEATHE
             and not postShootActionPause
             and not combatAutomationPaused()
             and not shouldUnsheatheNow() then
@@ -934,6 +943,13 @@ local function updateStateCore()
     unsheatheReady = false
     postShootMainhand = false
 
+    -- SHEATHE=false must never enter the automatic sheathing path.
+    if not SHEATHE then
+        cancelSheatheTimer()
+        idleSheathing = false
+        return
+    end
+
     if idleSheathing then
         if state == 1 then
             finishAtGoal(1)
@@ -1136,6 +1152,10 @@ local function setOption(option, value)
         INCLUDE_ATTACKABLE_TARGETS = value
         UnsheathedDB.includeAttackableTargets = value
 
+    elseif option == "sheathe" then
+        SHEATHE = value
+        UnsheathedDB.sheathe = value
+
     else
         return
     end
@@ -1153,6 +1173,7 @@ local function setOption(option, value)
         ranged = "Ranged",
         combat = "Combat",
         target = "Target",
+        sheathe = "Sheathe",
     }
 
     local status = value
@@ -1163,6 +1184,8 @@ local function setOption(option, value)
 end
 
 local function printOptionStatus()
+    local sheatheStatus = SHEATHE
+        and "|cff80ff80On|r" or "|cffff8080Off|r"
     local combatStatus = INCLUDE_COMBAT
         and "|cff80ff80On|r" or "|cffff8080Off|r"
     local targetStatus = INCLUDE_ATTACKABLE_TARGETS
@@ -1170,6 +1193,7 @@ local function printOptionStatus()
     local rangedStatus = USE_RANGED_WEAPON
         and "|cff80ff80On|r" or "|cffff8080Off|r"
 
+    printLine("Sheathe: " .. sheatheStatus)
     printLine("Combat: " .. combatStatus)
     printLine("Target: " .. targetStatus)
     printLine("Ranged: " .. rangedStatus)
@@ -1190,6 +1214,7 @@ local function printHelp()
 
     printLine("|cff80c0ffUnsheathed:|r |cffffd200Commands|r")
     printLine("/us " .. options .. " - Enable or disable Unsheathed for this character.")
+    printLine("/us sheathe " .. options .. " - Enable or disable automatic sheathing.")
     printLine("/us combat " .. options .. " - Allow unsheathing during combat.")
     printLine("/us target " .. options .. " - React to attackable targets.")
     printLine("/us ranged " .. options .. " - Prefer the ranged weapon over the main hand.")
@@ -1219,6 +1244,10 @@ frame:SetScript("OnEvent", function(_, event, ...)
         INCLUDE_ATTACKABLE_TARGETS = getSavedBoolean(
             "includeAttackableTargets",
             DEFAULT_INCLUDE_ATTACKABLE_TARGETS
+        )
+        SHEATHE = getSavedBoolean(
+            "sheathe",
+            DEFAULT_SHEATHE
         )
         SheatheDelay = getSavedSheatheDelay()
 
@@ -1397,6 +1426,7 @@ SlashCmdList["UNSHEATHED"] = function(message)
         ranged = true,
         combat = true,
         target = true,
+        sheathe = true,
     }
 
     if optionNames[first]
