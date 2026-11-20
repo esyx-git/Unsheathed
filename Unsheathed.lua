@@ -12,7 +12,8 @@ local INCLUDE_JUMPING_AND_FALLING = false
 local DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT = false
 
 local UnsheatheDelay = 0.5
-local ActionDelay = 3.0
+local ActionDelay = 1.0
+local ChatDelay = 3.0
 local SheatheDelay = DEFAULT_SHEATHE_DELAY
 
 local POLL_INTERVAL = 0.5
@@ -730,10 +731,10 @@ local function ensureActionTimer()
     -- Do not start a watcher here. The deadline callback owns that chain.
 end
 
-local function startActionDelay()
+local function startActionDelay(delay)
     cancelActionTimer()
 
-    actionDelayUntil = GetTime() + ActionDelay
+    actionDelayUntil = GetTime() + (delay or ActionDelay)
     actionReadyUntil = 0
     actionWatchPass = 0
 
@@ -1529,9 +1530,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 
         -- Sender GUID is argument 12; author name is a fallback.
         if isOwnChatMessage(args[2], args[12]) then
-            startActionDelay()
+            startActionDelay(ChatDelay)
             chatSheathePendingUntil =
-                GetTime() + math.max(ActionDelay, ADDON_SHEATHE_WINDOW)
+                GetTime() + math.max(ChatDelay, ADDON_SHEATHE_WINDOW)
 
             cancelDrawTimer()
             drawReadyKey = nil
