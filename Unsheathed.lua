@@ -1225,7 +1225,9 @@ local function setSheatheDelay(value)
     updateState()
 
     printSettingResponse(
-        "Delay: " .. formatSheatheDelay(value) .. " Seconds"
+        "|cff80c0ffDelay:|r "
+            .. formatSheatheDelay(value)
+            .. " Seconds"
     )
 end
 
@@ -1263,7 +1265,7 @@ setEnabled = function(value, report)
     if value == enabled then
         if report then
             printSettingResponse(
-                "Status: "
+                "|cff80c0ffStatus:|r "
                     .. (value and "|cff80ff80Enabled|r"
                         or "|cffff8080Disabled|r")
             )
@@ -1279,7 +1281,7 @@ setEnabled = function(value, report)
 
         if report then
             printSettingResponse(
-                "Status: |cffff8080Disabled|r"
+                "|cff80c0ffStatus:|r |cffff8080Disabled|r"
             )
         end
         return
@@ -1299,7 +1301,7 @@ setEnabled = function(value, report)
 
     if report then
         printSettingResponse(
-            "Status: |cff80ff80Enabled|r"
+            "|cff80c0ffStatus:|r |cff80ff80Enabled|r"
         )
     end
 end
@@ -1347,7 +1349,9 @@ local function setOption(option, value)
         and "|cff80ff80On|r"
         or "|cffff8080Off|r"
 
-    printSettingResponse(optionNames[option] .. ": " .. status)
+    printSettingResponse(
+        "|cff80c0ff" .. optionNames[option] .. ":|r " .. status
+    )
 end
 
 local function printOptionStatus()
@@ -1360,32 +1364,41 @@ local function printOptionStatus()
     local rangedStatus = USE_RANGED_WEAPON
         and "|cff80ff80On|r" or "|cffff8080Off|r"
 
-    printLine("Sheathe: " .. sheatheStatus)
-    printLine("Combat: " .. combatStatus)
-    printLine("Target: " .. targetStatus)
-    printLine("Ranged: " .. rangedStatus)
+    printLine("|cff80c0ffSheathe:|r " .. sheatheStatus)
+    printLine("|cff80c0ffCombat:|r " .. combatStatus)
+    printLine("|cff80c0ffTarget:|r " .. targetStatus)
+    printLine("|cff80c0ffRanged:|r " .. rangedStatus)
 end
 
 local function printStatus()
     printLine("|cff80c0ffUnsheathed:|r")
-    printLine("Status: "
+    printLine("|cff80c0ffStatus:|r "
         .. (enabled and "|cff80ff80Enabled|r"
             or "|cffff8080Disabled|r"))
     printOptionStatus()
-    printLine("Delay: " .. formatSheatheDelay(SheatheDelay) .. " Seconds")
+    printLine("|cff80c0ffDelay:|r "
+        .. formatSheatheDelay(SheatheDelay)
+        .. " Seconds")
     printLine("Commands: Type |cffffd200/us help|r for options and commands.")
 end
 
 local function printHelp()
-    local options = "[|cff80ff80enable|r|||cffff8080disable|r]"
-
+    local command = "|cff80c0ff/us|r"
+    local options =
+        "|cff80ff80on|r | |cffff8080off|r"
     printLine("|cff80c0ffUnsheathed:|r |cffffd200Commands|r")
-    printLine("/us " .. options .. " - Enable or disable Unsheathed for this character.")
-    printLine("/us sheathe " .. options .. " - Enable or disable automatic sheathing.")
-    printLine("/us combat " .. options .. " - Allow unsheathing during combat.")
-    printLine("/us target " .. options .. " - React to attackable targets.")
-    printLine("/us ranged " .. options .. " - Prefer the ranged weapon over the main hand.")
-    printLine("/us delay [|cff80ff801-60|r] - Set the sheathing delay in seconds.")
+    printLine(command .. " " .. options
+        .. " - Enable or disable Unsheathed for this character.")
+    printLine(command .. " sheathe " .. options
+        .. " - Turn automatic sheathing on or off.")
+    printLine(command .. " combat " .. options
+        .. " - Allow unsheathing during combat.")
+    printLine(command .. " target " .. options
+        .. " - React to attackable targets.")
+    printLine(command .. " ranged " .. options
+        .. " - Prefer the ranged weapon over the main hand.")
+    printLine(command .. " delay |cff80ff801-60|r"
+        .. " - Set the sheathing delay in seconds.")
 end
 
 frame:SetScript("OnEvent", function(_, event, ...)
@@ -1583,7 +1596,7 @@ SlashCmdList["UNSHEATHED"] = function(message)
         return
     end
 
-    if first == "enable" or first == "on" then
+    if first == "on" then
         if second == "" then
             setEnabled(true, true)
         else
@@ -1592,7 +1605,7 @@ SlashCmdList["UNSHEATHED"] = function(message)
         return
     end
 
-    if first == "disable" or first == "off" then
+    if first == "off" then
         if second == "" then
             setEnabled(false, true)
         else
@@ -1609,8 +1622,8 @@ SlashCmdList["UNSHEATHED"] = function(message)
     }
 
     if optionNames[first]
-        and (second == "enable" or second == "disable") then
-        setOption(first, second == "enable")
+        and (second == "on" or second == "off") then
+        setOption(first, second == "on")
         return
     end
 
