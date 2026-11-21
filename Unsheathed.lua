@@ -1,21 +1,20 @@
 local ADDON_NAME = "Unsheathed"
 
-local DEFAULT_USE_RANGED_WEAPON = false
+local DEFAULT_ENABLED = true
 local DEFAULT_INCLUDE_COMBAT = true
 local DEFAULT_INCLUDE_ATTACKABLE_TARGETS = true
-local DEFAULT_ENABLED = true
 local DEFAULT_SHEATHE = true
 local DEFAULT_SHEATHE_DELAY = 3.0
+local DEFAULT_USE_RANGED_WEAPON = false
 
--- Edit these only in this file.
-local INCLUDE_JUMPING_AND_FALLING = false
 local DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT = false
+local INCLUDE_JUMPING_AND_FALLING = false
 local WAIT_FOR_MOVEMENT_IN_COMBAT = true
 
-local UnsheatheDelay = 0.5
-local ActionDelay = 1.0
-local ChatDelay = 3.0
-local SheatheDelay = DEFAULT_SHEATHE_DELAY
+local ACTION_DELAY = 1.0
+local CHAT_DELAY = 3.0
+local COMBAT_DELAY = 0.5
+local SHEATHE_DELAY = DEFAULT_SHEATHE_DELAY
 
 local POLL_INTERVAL = 0.5
 local SHOOT_HANDOFF_WINDOW = 1.5
@@ -751,7 +750,7 @@ end
 local function startActionDelay(delay)
     cancelActionTimer()
 
-    actionDelayUntil = GetTime() + (delay or ActionDelay)
+    actionDelayUntil = GetTime() + (delay or ACTION_DELAY)
     actionReadyUntil = 0
     actionWatchPass = 0
 
@@ -761,9 +760,9 @@ end
 local function getDrawDelay()
     local now = GetTime()
 
-    -- Combat always uses UnsheatheDelay, including after an action.
+    -- Combat always uses COMBAT_DELAY, including after an action.
     if isInCombatNow() then
-        return UnsheatheDelay, "combat"
+        return COMBAT_DELAY, "combat"
     end
 
     local actionRemaining = actionDelayUntil - now
@@ -775,7 +774,7 @@ local function getDrawDelay()
         return 0, "action-ready"
     end
 
-    return UnsheatheDelay, "normal"
+    return COMBAT_DELAY, "normal"
 end
 
 local function scheduleDraw(delay, key)
@@ -822,7 +821,7 @@ local function scheduleSheathe()
     local generation = sheatheTimerGeneration + 1
     sheatheTimerGeneration = generation
 
-    sheatheTimer = C_Timer.NewTimer(SheatheDelay, function()
+    sheatheTimer = C_Timer.NewTimer(SHEATHE_DELAY, function()
         if generation ~= sheatheTimerGeneration then
             return
         end
@@ -1084,7 +1083,7 @@ local function updateStateCore()
                     drawReadyKey = nil
                     driveTowardState(2, false)
                 else
-                    scheduleDraw(UnsheatheDelay, movementDrawKey)
+                    scheduleDraw(COMBAT_DELAY, movementDrawKey)
                 end
             elseif currentState == 2 then
                 cancelDrawTimer()
@@ -1271,7 +1270,7 @@ local function setSheatheDelay(value)
         return
     end
 
-    SheatheDelay = value
+    SHEATHE_DELAY = value
     UnsheathedDB.sheatheDelay = value
 
     cancelSheatheTimer()
@@ -1450,7 +1449,7 @@ local function printStatus()
             or "|cffff8080Disabled|r"))
     printOptionStatus()
     printLine("|cff80c0ffDelay:|r "
-        .. formatSheatheDelay(SheatheDelay)
+        .. formatSheatheDelay(SHEATHE_DELAY)
         .. " Seconds")
     printLine("|cffffd200Commands:|r Type |cffffd200/us help|r for options and commands.")
 end
@@ -1521,7 +1520,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
             DEFAULT_INCLUDE_ATTACKABLE_TARGETS
         )
         SHEATHE = getSavedBoolean("sheathe", DEFAULT_SHEATHE)
-        SheatheDelay = getSavedSheatheDelay()
+        SHEATHE_DELAY = getSavedSheatheDelay()
 
         initialized = true
         setEnabled(getSavedBoolean("enabled", DEFAULT_ENABLED), false)
@@ -1602,9 +1601,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
 
         -- Sender GUID is argument 12; author name is a fallback.
         if isOwnChatMessage(args[2], args[12]) then
-            startActionDelay(ChatDelay)
+            startActionDelay(CHAT_DELAY)
             chatSheathePendingUntil =
-                GetTime() + math.max(ChatDelay, ADDON_SHEATHE_WINDOW)
+                GetTime() + math.max(CHAT_DELAY, ADDON_SHEATHE_WINDOW)
 
             cancelDrawTimer()
             drawReadyKey = nil
