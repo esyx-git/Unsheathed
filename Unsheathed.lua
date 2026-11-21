@@ -1,36 +1,56 @@
+-- Addon identity is used to ignore ADDON_LOADED events for other addons.
 local ADDON_NAME = "Unsheathed"
 
-local DEFAULT_ENABLED = true
+-- Defaults are used for a character's first login or when a saved setting is
+-- missing or invalid.
+local DEFAULT_USE_RANGED_WEAPON = false
 local DEFAULT_INCLUDE_COMBAT = true
 local DEFAULT_INCLUDE_ATTACKABLE_TARGETS = true
+local DEFAULT_ENABLED = true
 local DEFAULT_SHEATHE = true
 local DEFAULT_SHEATHE_DELAY = 3.0
-local DEFAULT_USE_RANGED_WEAPON = false
 
-local DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT = false
+-- These behavior switches are intentionally configured in this file rather
+-- than exposed as per-character slash-command settings.
 local INCLUDE_JUMPING_AND_FALLING = false
+local DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT = false
 local WAIT_FOR_MOVEMENT_IN_COMBAT = true
 
+-- Delay configuration:
+-- COMBAT_DELAY is the normal delay before drawing a weapon.
+-- ACTION_DELAY and CHAT_DELAY account for actions that may cause the client
+-- to sheath weapons; SHEATHE_DELAY controls automatic sheathing after activity.
+local COMBAT_DELAY = 0.5
 local ACTION_DELAY = 1.0
 local CHAT_DELAY = 3.0
-local COMBAT_DELAY = 0.5
 local SHEATHE_DELAY = DEFAULT_SHEATHE_DELAY
 
+-- Timings for polling, shoot handoff detection, and identifying sheaths caused
+-- by the addon itself. These short windows help distinguish our own changes
+-- from changes made by the game client.
 local POLL_INTERVAL = 0.5
 local SHOOT_HANDOFF_WINDOW = 1.5
 local ADDON_SHEATHE_WINDOW = 1.0
 
+-- Spell IDs used to recognize ranged Shoot activity and Auto Shot.
 local SHOOT_SPELL_ID = 5019
 local AUTO_SHOT_SPELL_ID = 75
 
+-- Action-watch timings limit the amount of follow-up checking after a possible
+-- client-triggered sheath, avoiding continuous polling while still catching
+-- delayed state changes.
 local ACTION_WATCH_FIRST_DELAY = 0.10
 local ACTION_WATCH_REPEAT_DELAY = 0.20
 local ACTION_WATCH_COUNT = 10
 local ACTION_READY_GRACE = 2.5
 
+-- ToggleSheath can cycle through multiple states. These retry timings let the
+-- addon observe the result and continue toward its intended state when needed.
 local TOGGLE_RETRY_DELAY = 0.20
 local TOGGLE_UNCHANGED_RETRY_DELAY = 0.50
 
+-- Aura IDs used to detect eating or drinking. Automatic weapon-state work is
+-- paused while the player is sitting with one of these auras.
 local EATING_DRINKING_AURA_IDS = {
     [430] = true,
     [431] = true,
@@ -39,7 +59,7 @@ local EATING_DRINKING_AURA_IDS = {
     [24005] = true,
 }
 
--- Classes that can use ranged weapons or wands in this client era.
+-- Classes allowed to enable ranged-weapon preference through the slash command.
 local RANGED_WEAPON_CLASSES = {
     HUNTER = true,
     MAGE = true,
@@ -49,44 +69,58 @@ local RANGED_WEAPON_CLASSES = {
     WARRIOR = true,
 }
 
+-- The .toc declares this as a per-character saved variable.
 UnsheathedDB = UnsheathedDB or {}
 
+-- A single frame handles addon events and, only when needed, optional polling.
 local frame = CreateFrame("Frame")
 
+-- Runtime lifecycle and polling state.
 local enabled = false
 local initialized = false
 local pollingEnabled = false
 local pollElapsed = 0
 
+-- These settings are loaded from UnsheathedDB when the addon initializes.
 local USE_RANGED_WEAPON = DEFAULT_USE_RANGED_WEAPON
 local INCLUDE_COMBAT = DEFAULT_INCLUDE_COMBAT
 local INCLUDE_ATTACKABLE_TARGETS = DEFAULT_INCLUDE_ATTACKABLE_TARGETS
 local SHEATHE = DEFAULT_SHEATHE
 
+-- Cached gameplay conditions, refreshed by events and the optional poll.
 local eventMoving = false
 local moving = false
 local inCombat = false
 local attackableTarget = false
 local autoRepeatActive = false
 
+-- Aura and sitting state are cached so aura enumeration is not performed on
+-- every state update.
 local mealAuraActive = false
 local playerSitting = false
 
+-- Inventory slots and equipment-presence caches for both weapon types.
 local mainHandSlot
 local rangedSlot
 local mainHandPresent = false
 local rangedPresent = false
 
+-- Previous observed state and short-lived markers used to identify expected
+-- sheath transitions caused by the addon or by the player's chat action.
 local lastObservedSheathState
 local addonSheathePendingUntil = 0
 local chatSheathePendingUntil = 0
 
+-- Action timing state. The deadlines defer drawing after actions, while the
+-- watcher chain catches a client sheath that occurs slightly later.
 local actionDelayUntil = 0
 local actionReadyUntil = 0
 local actionTimer
 local actionTimerGeneration = 0
 local actionWatchPass = 0
 
+-- Ranged-fire handoff state. A detected ranged sheath can trigger a main-hand
+-- draw, or temporarily block that draw during combat when configured.
 local lastShootActivityAt = -1000000
 local postShootMainhand = false
 local postShootCombatBlocked = false
@@ -94,23 +128,32 @@ local postShootBlockUntil = 0
 local postShootBlockTimer
 local postShootBlockGeneration = 0
 
+-- Draw timer state and keys let repeated updates reuse an already-pending
+-- request instead of continually replacing its timer.
 local drawTimer
 local drawTimerGeneration = 0
 local drawTimerKey
 local drawReadyKey
 
+-- Delayed sheathing and the marker indicating that the delay has elapsed.
 local sheatheTimer
 local sheatheTimerGeneration = 0
 local idleSheathing = false
 
+-- Toggle retry state. The pending goal prevents multiple timers from pursuing
+-- conflicting sheath states.
 local toggleTimer
 local toggleTimerGeneration = 0
 local pendingToggleGoal
 
+-- Forward declarations allow callbacks and helpers to refer to functions
+-- defined later in the file.
 local updateState
 local onUpdateScript
 local setEnabled
 
+-- Safely test whether a client value is secret or otherwise unavailable.
+-- Treat failures conservatively so protected values are not used in comparisons.
 local function isSecret(value)
     if type(issecretvalue) ~= "function" then
         return false
@@ -120,6 +163,8 @@ local function isSecret(value)
     return not ok or result == true
 end
 
+-- Call a boolean-returning API defensively. Unsupported APIs, errors, and
+-- secret values are treated as false.
 local function safeBool(func, ...)
     if type(func) ~= "function" then
         return false
@@ -133,6 +178,8 @@ local function safeBool(func, ...)
     return value == true or value == 1
 end
 
+-- Determine whether a casting API reports an active spell. Returning true for
+-- secret values avoids drawing a weapon when the casting state cannot be read.
 local function isFunctionCasting(func)
     if type(func) ~= "function" then
         return false
@@ -150,11 +197,14 @@ local function isFunctionCasting(func)
     return type(name) == "string" and name ~= ""
 end
 
+-- A weapon draw must wait while either a cast or a channel is active.
 local function isCastingOrChanneling()
     return isFunctionCasting(UnitCastingInfo)
         or isFunctionCasting(UnitChannelInfo)
 end
 
+-- Read the current sheath state, returning nil if the API result is unavailable.
+-- The client values are 1 = sheathed, 2 = melee, and 3 = ranged.
 local function getSheathState()
     if type(GetSheathState) ~= "function" then
         return nil
@@ -168,6 +218,8 @@ local function getSheathState()
     return state
 end
 
+-- Movement events are the primary movement signal. Falling is included only
+-- when the file-level option is enabled.
 local function isMovingNow()
     if eventMoving then
         return true
@@ -176,10 +228,15 @@ local function isMovingNow()
     return INCLUDE_JUMPING_AND_FALLING and safeBool(IsFalling)
 end
 
+-- Combine the event cache with the game API so combat state remains accurate
+-- if an event was missed or the cache has not yet refreshed.
 local function isInCombatNow()
     return inCombat or safeBool(UnitAffectingCombat, "player")
 end
 
+-- Decide whether automatic sheath changes must pause during combat. Combat
+-- behavior disabled means pause completely; ranged preference leaves combat
+-- weapon changes to the client.
 local function combatAutomationPaused()
     if not isInCombatNow() then
         return false
@@ -194,6 +251,8 @@ local function combatAutomationPaused()
     return USE_RANGED_WEAPON
 end
 
+-- A target only counts when it exists, is alive, and can be attacked by the
+-- player. This deliberately excludes dead targets and ghosts.
 local function hasAttackableTarget()
     if not safeBool(UnitExists, "target") then
         return false
@@ -206,6 +265,7 @@ local function hasAttackableTarget()
     return safeBool(UnitCanAttack, "player", "target")
 end
 
+-- Read whether the player is sitting, using whichever supported API is present.
 local function isPlayerSitting()
     if type(UnitIsSitting) == "function" then
         local ok, value = pcall(UnitIsSitting, "player")
@@ -224,6 +284,8 @@ local function isPlayerSitting()
     return false
 end
 
+-- Match an aura by known spell ID first, then by localized food/drink names
+-- where those global strings are available.
 local function isEatingOrDrinkingAura(auraName, spellID)
     if type(spellID) == "number"
         and EATING_DRINKING_AURA_IDS[spellID] then
@@ -250,11 +312,13 @@ local function isEatingOrDrinkingAura(auraName, spellID)
         or normalizedName == "drink"
 end
 
+-- Preserve the number of return values when wrapping UnitAura with pcall.
 local function pack(...)
     return { n = select("#", ...), ... }
 end
 
--- Called on login and UNIT_AURA, not from the regular update path.
+-- Refresh the meal/drink aura cache on login and UNIT_AURA, not on every
+-- regular update. Prefer C_UnitAuras and fall back to the legacy UnitAura API.
 local function refreshMealAuraCache()
     mealAuraActive = false
 
@@ -317,11 +381,15 @@ local function refreshMealAuraCache()
     end
 end
 
+-- Pause automatic changes only when both conditions are true: the player is
+-- sitting and the cached aura scan found food or drink.
 local function isEatingOrDrinkingWhileSitting()
     playerSitting = isPlayerSitting()
     return playerSitting and mealAuraActive
 end
 
+-- Resolve an inventory slot by its client-defined name, falling back to the
+-- known slot number if the lookup is unavailable.
 local function getInventorySlotID(slotName, fallback)
     if type(GetInventorySlotInfo) == "function" then
         local ok, slotID = pcall(GetInventorySlotInfo, slotName)
@@ -334,6 +402,8 @@ local function getInventorySlotID(slotName, fallback)
     return fallback
 end
 
+-- Refresh the cached presence of main-hand and ranged equipment. Item IDs are
+-- preferred; item links provide a fallback for clients where IDs are absent.
 local function refreshEquipment()
     mainHandPresent = false
     rangedPresent = false
@@ -381,6 +451,9 @@ local function refreshEquipment()
     end
 end
 
+-- Validate whether ranged mode can be enabled for the current character.
+-- The slot is initialized here too because slash commands can run before the
+-- addon has otherwise initialized its equipment slots.
 local function canEnableRangedMode()
     if type(UnitClass) ~= "function" then
         return false, "class"
@@ -410,6 +483,7 @@ local function canEnableRangedMode()
     return true
 end
 
+-- Check that the weapon selected by the current preference is equipped.
 local function hasSelectedWeapon()
     if USE_RANGED_WEAPON then
         return rangedPresent
@@ -418,6 +492,8 @@ local function hasSelectedWeapon()
     return mainHandPresent
 end
 
+-- Select the desired client sheath state. A pending post-shoot handoff always
+-- targets melee, even when ranged preference is normally enabled.
 local function selectedSheathState()
     if postShootMainhand then
         return 2
@@ -426,6 +502,7 @@ local function selectedSheathState()
     return USE_RANGED_WEAPON and 3 or 2
 end
 
+-- Detect active Shoot or auto-repeat fire so ToggleSheath does not interrupt it.
 local function isShootActive()
     if autoRepeatActive then
         return true
@@ -442,6 +519,8 @@ local function isShootActive()
     return false
 end
 
+-- Cancel a pending sheathe callback and invalidate any callback that may
+-- already be queued.
 local function cancelSheatheTimer()
     sheatheTimerGeneration = sheatheTimerGeneration + 1
 
@@ -451,6 +530,8 @@ local function cancelSheatheTimer()
     end
 end
 
+-- Cancel a pending draw callback and clear its key so a later request can be
+-- scheduled with the appropriate goal and delay.
 local function cancelDrawTimer()
     drawTimerGeneration = drawTimerGeneration + 1
 
@@ -462,6 +543,7 @@ local function cancelDrawTimer()
     drawTimerKey = nil
 end
 
+-- Cancel a pending sheath-state retry and discard its requested goal.
 local function cancelToggleTimer()
     toggleTimerGeneration = toggleTimerGeneration + 1
 
@@ -473,6 +555,7 @@ local function cancelToggleTimer()
     pendingToggleGoal = nil
 end
 
+-- Invalidate the action-delay deadline and its follow-up watcher chain.
 local function cancelActionTimer()
     actionTimerGeneration = actionTimerGeneration + 1
 
@@ -484,6 +567,7 @@ local function cancelActionTimer()
     actionWatchPass = 0
 end
 
+-- Stop any scheduled wake-up for the post-shoot combat block.
 local function cancelPostShootBlockTimer()
     postShootBlockGeneration = postShootBlockGeneration + 1
 
@@ -493,10 +577,13 @@ local function cancelPostShootBlockTimer()
     end
 end
 
+-- Mark the next short-lived sheath transition as addon-initiated so it is not
+-- mistaken for the player's own action.
 local function markAddonSheathe()
     addonSheathePendingUntil = GetTime() + ADDON_SHEATHE_WINDOW
 end
 
+-- Return the next state in the client's normal sheath cycle.
 local function nextSheathState(state)
     if state == 1 then
         return 2
@@ -509,6 +596,8 @@ local function nextSheathState(state)
     return nil
 end
 
+-- Schedule a state recheck when the client does not immediately reach the
+-- requested state. The generation token makes canceled callbacks harmless.
 local function scheduleToggleCheck(goalState, delay)
     if not enabled
         or type(C_Timer) ~= "table"
@@ -539,6 +628,9 @@ local function scheduleToggleCheck(goalState, delay)
     end)
 end
 
+-- Move toward a target sheath state by toggling and then observing the actual
+-- result. Immediate ranged-to-melee transitions intentionally sheath ranged
+-- first and draw melee immediately afterward, without the usual draw delay.
 local function driveTowardState(goalState, shootActive, immediate)
     local state = getSheathState()
     if state == nil then
@@ -628,6 +720,9 @@ local function driveTowardState(goalState, shootActive, immediate)
     end
 end
 
+-- Decide whether current gameplay conditions call for a drawn weapon.
+-- Combat preference takes precedence; outside combat, movement or an enabled
+-- attackable-target response can request a draw.
 local function wantsUnsheathedState()
     if isInCombatNow() then
         return INCLUDE_COMBAT and not USE_RANGED_WEAPON
@@ -641,6 +736,8 @@ local function wantsUnsheathedState()
         or (INCLUDE_ATTACKABLE_TARGETS and attackableTarget)
 end
 
+-- Continue a short bounded sequence of checks after an action deadline. The
+-- limited watcher catches delayed client sheath behavior without steady polling.
 local function scheduleActionWatch(generation, pass, delay)
     if not enabled
         or generation ~= actionTimerGeneration
@@ -685,6 +782,8 @@ local function scheduleActionWatch(generation, pass, delay)
     end)
 end
 
+-- Schedule the end of an action-induced pause. Once it expires, re-evaluate
+-- weapon state and start the bounded watcher for any delayed client response.
 local function scheduleActionDeadline(remaining)
     if not enabled
         or actionTimer
@@ -729,6 +828,8 @@ local function scheduleActionDeadline(remaining)
     end)
 end
 
+-- Ensure an outstanding action deadline has a timer. The watcher is started
+-- only by the deadline callback so duplicate update events cannot spawn chains.
 local function ensureActionTimer()
     if not enabled or isEatingOrDrinkingWhileSitting() then
         return
@@ -747,6 +848,7 @@ local function ensureActionTimer()
     -- Do not start a watcher here. The deadline callback owns that chain.
 end
 
+-- Start or restart the pause after an action that may cause the client to sheath.
 local function startActionDelay(delay)
     cancelActionTimer()
 
@@ -757,6 +859,8 @@ local function startActionDelay(delay)
     ensureActionTimer()
 end
 
+-- Select the applicable draw delay. Combat always uses COMBAT_DELAY, regardless
+-- of an action delay; outside combat, a pending action delay takes precedence.
 local function getDrawDelay()
     local now = GetTime()
 
@@ -777,6 +881,8 @@ local function getDrawDelay()
     return COMBAT_DELAY, "normal"
 end
 
+-- Schedule a delayed draw. The key identifies the goal and delay type so
+-- repeated state updates do not reset an equivalent timer.
 local function scheduleDraw(delay, key)
     if drawTimer and drawTimerKey == key then
         return
@@ -808,6 +914,8 @@ local function scheduleDraw(delay, key)
     end)
 end
 
+-- Begin the configured idle sheathe delay. The callback verifies that the
+-- original conditions still apply before changing the weapon state.
 local function scheduleSheathe()
     if sheatheTimer then
         return
@@ -839,6 +947,8 @@ local function scheduleSheathe()
     end)
 end
 
+-- Identify the player's own chat message. GUID is authoritative when available;
+-- the character name is used as a fallback for clients without a GUID value.
 local function isOwnChatMessage(author, senderGUID)
     if type(senderGUID) == "string"
         and senderGUID ~= ""
@@ -863,6 +973,9 @@ local function isOwnChatMessage(author, senderGUID)
     return string.lower(shortAuthor) == string.lower(playerName)
 end
 
+-- Record the latest sheath state and detect an unexpected ranged-to-sheathed
+-- transition shortly after shooting. Such a transition can request the
+-- post-shoot main-hand handoff unless it was caused by the addon or chat action.
 local function updateObservedSheathState(now)
     local state = getSheathState()
     if state == nil then
@@ -899,6 +1012,7 @@ local function updateObservedSheathState(now)
     return state
 end
 
+-- Wake the state machine when a post-shoot combat block expires.
 local function schedulePostShootBlockWake(delay)
     if type(C_Timer) ~= "table"
         or type(C_Timer.NewTimer) ~= "function"
@@ -922,6 +1036,9 @@ local function schedulePostShootBlockWake(delay)
     end)
 end
 
+-- Apply the optional combat block after ranged fire. While in combat, activity
+-- within the handoff window keeps main-hand automation blocked. Once combat
+-- ends, wait out any remaining window before allowing the next state update.
 local function updatePostShootCombatBlock(now, combatNow)
     if not DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT or not INCLUDE_COMBAT then
         postShootCombatBlocked = false
@@ -958,6 +1075,8 @@ local function updatePostShootCombatBlock(now, combatNow)
     return false
 end
 
+-- Request the selected weapon state after checking all pause conditions,
+-- equipment availability, casting, and the selected delay.
 local function requestUnsheathe(shootActive)
     if not enabled
         or isEatingOrDrinkingWhileSitting()
@@ -1007,6 +1126,9 @@ local function requestUnsheathe(shootActive)
     driveTowardState(goalState, shootActive)
 end
 
+-- Central decision routine. It refreshes cached conditions, honors pause
+-- policies, prioritizes combat movement and shoot handoffs, then chooses whether
+-- to draw, wait, or start the sheathe delay.
 local function updateStateCore()
     if not enabled then
         return
@@ -1159,6 +1281,8 @@ local function updateStateCore()
     end
 end
 
+-- Enable OnUpdate only when falling/jumping detection requires periodic
+-- sampling. With the option off, the addon relies on events and timers.
 local function refreshPolling()
     local shouldPoll = enabled and INCLUDE_JUMPING_AND_FALLING
 
@@ -1176,6 +1300,8 @@ local function refreshPolling()
     end
 end
 
+-- Public internal entry point for all state changes. Polling configuration is
+-- refreshed afterward in case the enabled state changed.
 updateState = function()
     if not enabled then
         return
@@ -1185,10 +1311,14 @@ updateState = function()
     refreshPolling()
 end
 
+-- Protect event registration so unavailable client events do not prevent the
+-- addon from registering the events it can use.
 local function registerEventSafely(eventName)
     pcall(frame.RegisterEvent, frame, eventName)
 end
 
+-- Register all events used for movement, combat, targeting, equipment, chat,
+-- auras, casting, and auto-repeat fire.
 local function registerEvents()
     local events = {
         "PLAYER_STARTED_MOVING",
@@ -1218,6 +1348,7 @@ local function registerEvents()
     end
 end
 
+-- Add one line to the default chat frame when it is available.
 local function printLine(message)
     if DEFAULT_CHAT_FRAME
         and type(DEFAULT_CHAT_FRAME.AddMessage) == "function" then
@@ -1225,15 +1356,19 @@ local function printLine(message)
     end
 end
 
+-- Prefix a single response with the addon name.
 local function printMessage(message)
     printLine("|cff80c0ffUnsheathed:|r " .. message)
 end
 
+-- Print a multi-line response with the addon name on its own line, keeping the
+-- following lines reserved for the setting or status details.
 local function printSettingResponse(message)
     printLine("|cff80c0ffUnsheathed:|r")
     printLine(message)
 end
 
+-- Load a saved boolean or initialize it to its default for this character.
 local function getSavedBoolean(key, defaultValue)
     if type(UnsheathedDB[key]) == "boolean" then
         return UnsheathedDB[key]
@@ -1243,12 +1378,16 @@ local function getSavedBoolean(key, defaultValue)
     return defaultValue
 end
 
+-- The slash command accepts only delays within the documented 1–60 second
+-- range. Decimal values are valid.
 local function isValidSheatheDelay(value)
     return type(value) == "number"
         and value >= 1
         and value <= 60
 end
 
+-- Load the saved sheathe delay, resetting invalid or absent values to the
+-- configured default.
 local function getSavedSheatheDelay()
     local savedDelay = UnsheathedDB.sheatheDelay
 
@@ -1260,10 +1399,13 @@ local function getSavedSheatheDelay()
     return DEFAULT_SHEATHE_DELAY
 end
 
+-- Display numeric delay values without unnecessary trailing zeroes.
 local function formatSheatheDelay(value)
     return string.format("%g", value)
 end
 
+-- Validate, save, and apply a new sheathe delay, then re-evaluate the current
+-- state so the updated timing takes effect.
 local function setSheatheDelay(value)
     if not isValidSheatheDelay(value) then
         printMessage("Delay must be a number from 1 to 60 seconds.")
@@ -1284,6 +1426,8 @@ local function setSheatheDelay(value)
     )
 end
 
+-- Clear timers, cached activity markers, polling, and handoff state when the
+-- addon is disabled, preventing callbacks from operating on stale state.
 local function resetRuntimeState()
     cancelSheatheTimer()
     cancelDrawTimer()
@@ -1309,6 +1453,8 @@ local function resetRuntimeState()
     lastShootActivityAt = -1000000
 end
 
+-- Change the global enabled state, persist it for this character, and either
+-- register events and initialize caches or clean up runtime work.
 setEnabled = function(value, report)
     value = value == true
     UnsheathedDB.enabled = value
@@ -1360,10 +1506,15 @@ setEnabled = function(value, report)
     end
 end
 
+-- Expose a global setter for other addons or macros that want to control the
+-- enabled state.
 _G.Unsheathed_SetEnabled = function(value)
     setEnabled(value, true)
 end
 
+-- Apply and save one of the slash-command options. Ranged mode is validated
+-- before changing settings so an unsupported class or missing weapon gets a
+-- clear error rather than leaving the option enabled but unusable.
 local function setOption(option, value)
     value = value == true
 
@@ -1426,6 +1577,8 @@ local function setOption(option, value)
     )
 end
 
+-- Print each behavior setting with the same color convention used by status
+-- and setting-change responses.
 local function printOptionStatus()
     local sheatheStatus = SHEATHE
         and "|cff80ff80On|r" or "|cffff8080Off|r"
@@ -1442,6 +1595,7 @@ local function printOptionStatus()
     printLine("|cff80c0ffRanged:|r " .. rangedStatus)
 end
 
+-- Report the addon state, behavior options, and configured sheathe delay.
 local function printStatus()
     printLine("|cff80c0ffUnsheathed:|r")
     printLine("|cff80c0ffStatus:|r "
@@ -1454,6 +1608,7 @@ local function printStatus()
     printLine("|cffffd200Commands:|r Type |cffffd200/us help|r for options and commands.")
 end
 
+-- List the supported slash commands and their accepted on/off or delay values.
 local function printHelp()
     local command = "|cff80c0ff/us|r"
     local options = "|cff80ff80on|r | |cffff8080off|r"
@@ -1473,6 +1628,9 @@ local function printHelp()
         .. " - Set the sheathing delay in seconds.")
 end
 
+-- Handle player spellcast events. Ranged shots update shoot activity; other
+-- successful player spells outside combat start the action delay because they
+-- may cause the client to sheath the weapon.
 local function handleSpellcastEvent(event, ...)
     local unit, _, spellID = ...
 
@@ -1497,6 +1655,8 @@ local function handleSpellcastEvent(event, ...)
     updateState()
 end
 
+-- Dispatch registered game events and initialize saved settings when the addon
+-- loads. Returning early after event-specific handling avoids duplicate work.
 frame:SetScript("OnEvent", function(_, event, ...)
     if event == "ADDON_LOADED" then
         local loadedAddonName = ...
@@ -1615,6 +1775,9 @@ frame:SetScript("OnEvent", function(_, event, ...)
     updateState()
 end)
 
+-- Optional low-frequency sampling catches falling/jumping movement when that
+-- file-level option is enabled. The interval avoids running the full state
+-- machine on every frame.
 onUpdateScript = function(_, elapsed)
     if not enabled or not INCLUDE_JUMPING_AND_FALLING then
         return
@@ -1629,6 +1792,7 @@ onUpdateScript = function(_, elapsed)
     updateState()
 end
 
+-- Register the /us command and parse its optional subcommand and arguments.
 SLASH_UNSHEATHED1 = "/us"
 SlashCmdList["UNSHEATHED"] = function(message)
     if not initialized then
@@ -1643,6 +1807,7 @@ SlashCmdList["UNSHEATHED"] = function(message)
     second = string.lower(second or "")
     extra = string.lower(extra or "")
 
+    -- Reject extra arguments rather than silently accepting a malformed command.
     if extra ~= "" then
         printHelp()
         return
@@ -1702,4 +1867,6 @@ SlashCmdList["UNSHEATHED"] = function(message)
     printHelp()
 end
 
+-- Listen for addon loading so saved variables and the configured initial state
+-- are applied once this addon has been loaded by the client.
 frame:RegisterEvent("ADDON_LOADED")
