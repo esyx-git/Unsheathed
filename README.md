@@ -48,7 +48,7 @@ Use `/us` or `/us status` to view the addon’s status and settings. Use `/us he
 | `/us delay <1–60>` | Set the sheathing delay in seconds. Decimals are accepted, for example `/us delay 2.5`. The value is saved per character. |
 | `/us help` | Show available commands. |
 
-### Ranged Preference Behavior
+### Ranged Mode
 
 The WoW client can’t sheath or unsheathe a ranged weapon directly. Switching to the ranged weapon may require the client to cycle through the main-hand weapon first. When Ranged is on, combat weapon changes are left to the client. The addon avoids toggling during active Shoot or auto-repeat fire and can switch to the main hand after a ranged-fire handoff.
 
