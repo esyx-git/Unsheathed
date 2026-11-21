@@ -2,18 +2,24 @@
 
 **Unsheathed** is an addon for World of Warcraft: Forever that automatically draws and sheathes your weapons based on movement, combat, and attackable targets. It can help reduce weapon clipping and keep weapons drawn when you want them visible.
 
-Movement always triggers unsheathing. You can also choose whether combat and attackable targets trigger it. When draw conditions end, Unsheathed sheathes your weapon after your chosen delay, if automatic sheathing is enabled. The addon avoids drawing during active casts and channels, and can redraw your weapon if an action sheathes it while a draw condition is still active.
+Movement always triggers unsheathing. You can choose whether combat and attackable targets trigger it. When draw conditions end, Unsheathed sheathes your weapon after your chosen delay, if automatic sheathing is enabled. The addon ignores dead or ghost targets and avoids drawing during active casts and channels.
 
-**Current version:** 1.1.4
+Unsheathed also accounts for the client’s weapon-state cycling: `ToggleSheath()` may cycle through melee, ranged, and sheathed states. Ranged weapon changes in combat are left to the client. When configured to use the ranged weapon, the addon can hand off to the main-hand weapon after ranged fire finishes.
+
+**Current version:** 1.1.5
 
 ## Features
 
 - Automatically unsheathes when you move.
 - Optionally unsheathes during combat or while targeting an attackable enemy.
+- Ignores dead or ghost targets.
 - Sheathes after a configurable delay when draw conditions end.
-- Lets you enable or disable automatic sheathing.
-- Lets you use your main-hand or ranged weapon.
-- Avoids interfering with active Shoot or auto-repeat ranged fire.
+- Lets you disable automatic sheathing. With sheathing off, the addon continues to request the selected weapon drawn outside combat.
+- Lets you choose between the main-hand and ranged weapon.
+- Avoids drawing during active casts and channels.
+- Avoids interrupting active Shoot or auto-repeat ranged fire.
+- Can switch from a ranged weapon to the main-hand weapon after ranged fire finishes.
+- Can pause automatic weapon changes while you are sitting and eating or drinking.
 - Saves the enabled state and supported settings separately for each character.
 
 ## Installation
@@ -35,30 +41,33 @@ Use `/us` or `/us status` to view the addon’s status and settings. Use `/us he
 | Command | Description |
 | --- | --- |
 | `/us <on\|off>` | Enable or disable Unsheathed for the current character. |
-| `/us sheathe <on\|off>` | Enable or disable automatic sheathing. |
+| `/us sheathe <on\|off>` | Enable or disable automatic sheathing. When off, the addon continues to request the selected weapon drawn outside combat. |
 | `/us combat <on\|off>` | Include or ignore combat. When combat is ignored, automatic weapon changes pause until combat ends. |
-| `/us target <on\|off>` | Enable or disable target-triggered unsheathing. |
+| `/us target <on\|off>` | Enable or disable target-triggered unsheathing. Dead and ghost targets are ignored. |
 | `/us ranged <on\|off>` | Choose the ranged or main-hand weapon. Ranged mode requires a supported class and an equipped ranged weapon. |
-| `/us delay <1–60>` | Set the sheathing delay in seconds. Decimals are accepted, for example `/us delay 2.5`. |
+| `/us delay <1–60>` | Set the sheathing delay in seconds. Decimals are accepted, for example `/us delay 2.5`. The value is saved per character. |
 | `/us help` | Show available commands. |
 
-### Disclaimer (Ranged)
+### Ranged weapon behavior
 
-The WoW client can’t sheath or unsheathe a ranged weapon directly. Switching to the ranged weapon requires the client to cycle through the main-hand weapon first. When Ranged is on, combat weapon changes are left to the client.
+The WoW client can’t sheath or unsheathe a ranged weapon directly. Switching to the ranged weapon may require the client to cycle through the main-hand weapon first. When Ranged is on, combat weapon changes are left to the client. The addon avoids toggling during active Shoot or auto-repeat fire and can switch to the main hand after a ranged-fire handoff.
 
 ## Settings
 
-The default sheathing delay is **3.0 seconds**. Change it for the current character with `/us delay`; the value is saved per character.
+The default sheathing delay is **3.0 seconds**. Change it for the current character with `/us delay`; the value is saved per character. The Lua default is used when no valid delay has been saved.
 
-These additional behavior settings can only be changed by editing `Unsheathed.lua`:
+These behavior settings can only be changed by editing `Unsheathed.lua`:
 
-- `INCLUDE_JUMPING_AND_FALLING` — Set to `true` to count jumping or falling as movement. Default: `false`.
+- `INCLUDE_JUMPING_AND_FALLING` — Set to `true` to count falling as movement. Default: `false`.
+- `WAIT_FOR_MOVEMENT_IN_COMBAT` — Set to `true` to pause automatic weapon draws in combat until movement is detected. When movement starts, a drawn ranged weapon is immediately sheathed before the main hand is drawn; if the weapon is sheathed, the normal draw delay applies. Default: `true`.
 - `DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT` — Set to `true` to block automatic weapon transitions after ranged fire in combat until combat ends and the post-Shoot handoff window passes. Default: `false`. This setting is ignored when combat behavior is disabled.
 
-The unsheathing and action delays can also be edited in `Unsheathed.lua`:
+These timing settings can also be changed in `Unsheathed.lua`:
 
-- `UnsheatheDelay = 0.5` seconds — Delay before drawing a weapon.
-- `ActionDelay = 3.0` seconds — Delay after an action, such as speaking, causes the weapon to sheath.
+- `COMBAT_DELAY = 0.5` seconds — Delay before drawing a weapon under normal or combat draw conditions.
+- `ACTION_DELAY = 1.0` second — Delay after a successful non-Shoot spell causes a possible sheath outside combat.
+- `CHAT_DELAY = 3.0` seconds — Delay after your own `/say` or `/yell` message causes a possible sheath.
+- `SHEATHE_DELAY = 3.0` seconds — Default delay before automatic sheathing. A valid per-character value set with `/us delay` takes precedence.
 
 ## Compatibility
 
