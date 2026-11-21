@@ -10,6 +10,7 @@ local DEFAULT_SHEATHE_DELAY = 3.0
 -- Edit these only in this file.
 local INCLUDE_JUMPING_AND_FALLING = false
 local DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT = false
+local WAIT_FOR_MOVEMENT_IN_COMBAT = true
 
 local UnsheatheDelay = 0.5
 local ActionDelay = 1.0
@@ -539,7 +540,7 @@ local function scheduleToggleCheck(goalState, delay)
     end)
 end
 
-local function driveTowardState(goalState, shootActive)
+local function driveTowardState(goalState, shootActive, immediate)
     local state = getSheathState()
     if state == nil then
         return
@@ -571,7 +572,8 @@ local function driveTowardState(goalState, shootActive)
 
     local beforeState = state
 
-    if goalState == 1 then
+    if goalState == 1
+        or (immediate and goalState == 2 and beforeState == 3) then
         markAddonSheathe()
     end
 
@@ -582,6 +584,21 @@ local function driveTowardState(goalState, shootActive)
     end
 
     local afterState = getSheathState()
+
+    -- For an immediate ranged-to-main-hand transition, first sheath the
+    -- ranged weapon, then draw the main-hand weapon without a delay.
+    if immediate
+        and goalState == 2
+        and beforeState == 3
+        and afterState == 1 then
+        local secondOk = pcall(ToggleSheath)
+        if not secondOk then
+            scheduleToggleCheck(goalState, TOGGLE_UNCHANGED_RETRY_DELAY)
+            return
+        end
+
+        afterState = getSheathState()
+    end
 
     -- From melee, the client cycles to ranged before sheathed. When both
     -- weapons are equipped, toggle a second time immediately to sheath.
@@ -1016,6 +1033,20 @@ local function updateStateCore()
         return
     end
 
+    if WAIT_FOR_MOVEMENT_IN_COMBAT
+        and INCLUDE_COMBAT
+        and combatNow
+        and not USE_RANGED_WEAPON
+        and not moving then
+        cancelSheatheTimer()
+        cancelDrawTimer()
+        cancelToggleTimer()
+        cancelActionTimer()
+        drawReadyKey = nil
+        idleSheathing = false
+        return
+    end
+
     if updatePostShootCombatBlock(now, combatNow)
         or combatAutomationPaused() then
         cancelSheatheTimer()
@@ -1025,6 +1056,47 @@ local function updateStateCore()
         drawReadyKey = nil
         idleSheathing = false
         postShootMainhand = false
+        return
+    end
+
+    if WAIT_FOR_MOVEMENT_IN_COMBAT
+        and INCLUDE_COMBAT
+        and combatNow
+        and moving
+        and not USE_RANGED_WEAPON then
+        cancelSheatheTimer()
+        idleSheathing = false
+
+        if mainHandPresent
+            and not shootActive
+            and not isCastingOrChanneling() then
+            local currentState = getSheathState()
+
+            if currentState == 3 then
+                cancelDrawTimer()
+                drawReadyKey = nil
+                driveTowardState(2, false, true)
+            elseif currentState == 1 then
+                local movementDrawKey = "2:combat-movement"
+
+                if drawReadyKey == movementDrawKey then
+                    cancelDrawTimer()
+                    drawReadyKey = nil
+                    driveTowardState(2, false)
+                else
+                    scheduleDraw(UnsheatheDelay, movementDrawKey)
+                end
+            elseif currentState == 2 then
+                cancelDrawTimer()
+                drawReadyKey = nil
+                driveTowardState(2, false)
+            end
+        end
+
+        if getSheathState() == 2 then
+            postShootMainhand = false
+        end
+
         return
     end
 
