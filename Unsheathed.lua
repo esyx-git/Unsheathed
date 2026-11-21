@@ -3,26 +3,26 @@ local ADDON_NAME = "Unsheathed"
 
 -- Defaults are used for a character's first login or when a saved setting is
 -- missing or invalid.
-local DEFAULT_USE_RANGED_WEAPON = false
-local DEFAULT_INCLUDE_COMBAT = true
-local DEFAULT_INCLUDE_ATTACKABLE_TARGETS = true
 local DEFAULT_ENABLED = true
+local DEFAULT_INCLUDE_ATTACKABLE_TARGETS = true
+local DEFAULT_INCLUDE_COMBAT = true
 local DEFAULT_SHEATHE = true
 local DEFAULT_SHEATHE_DELAY = 3.0
+local DEFAULT_USE_RANGED_WEAPON = false
 
 -- These behavior switches are intentionally configured in this file rather
 -- than exposed as per-character slash-command settings.
-local INCLUDE_JUMPING_AND_FALLING = false
 local DISABLE_POST_SHOOT_MAINHAND_IN_COMBAT = false
+local INCLUDE_JUMPING_AND_FALLING = false
 local WAIT_FOR_MOVEMENT_IN_COMBAT = true
 
 -- Delay configuration:
 -- COMBAT_DELAY is the normal delay before drawing a weapon.
 -- ACTION_DELAY and CHAT_DELAY account for actions that may cause the client
 -- to sheath weapons; SHEATHE_DELAY controls automatic sheathing after activity.
-local COMBAT_DELAY = 0.5
 local ACTION_DELAY = 1.0
 local CHAT_DELAY = 3.0
+local COMBAT_DELAY = 0.5
 local SHEATHE_DELAY = DEFAULT_SHEATHE_DELAY
 
 -- Timings for polling, shoot handoff detection, and identifying sheaths caused
